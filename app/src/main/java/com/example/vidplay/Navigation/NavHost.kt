@@ -1,27 +1,21 @@
 package com.example.vidplay.Navigation
 
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
-import kotlinx.serialization.Serializable
-
-@Serializable
-object Main
-@Serializable
-object Page1
+import com.example.vidplay.MainScreen
+import com.example.vidplay.Page1Screen
 
 @Composable
-fun MyAppNavHost(
-    modifier: Modifier = Modifier,
-    navController: NavHostController = rememberNavController(),
-    ){
-    NavHost(
-        modifier = modifier,
-        navController = navController,
-        startDestination = "main",
-    ){
-
+fun MyAppNavHost() {
+    val navController = rememberNavController()
+    NavHost(navController = navController, startDestination = "main") {
+        composable("main") {
+            MainScreen(navController = navController)
+        }
+        composable("page1") {
+            Page1Screen()
+        }
     }
 }
