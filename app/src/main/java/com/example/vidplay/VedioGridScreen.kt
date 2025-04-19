@@ -44,8 +44,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavController
+import androidx.navigation.compose.rememberNavController
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.vidplay.Navigation.MyAppNavHost
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -55,14 +58,16 @@ class VideoGridScreen : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            VideoGrid()
+            MyAppNavHost()
         }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VideoGrid() {
+fun VideoGrid(navController: NavController? = null) {
+    val localNavController = navController ?: rememberNavController()
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -70,12 +75,12 @@ fun VideoGrid() {
             )
         }
     ) { padding ->
-        VideoGridContent(padding)
+        VideoGridContent(padding, localNavController)
     }
 }
 
 @Composable
-fun VideoGridContent(padding: PaddingValues) {
+fun VideoGridContent(padding: PaddingValues, navController: NavController) {
     val context = LocalContext.current
     val videoList = remember { mutableStateListOf<VideoItem>() }
     var isLoading by remember { mutableStateOf(true) }
@@ -142,14 +147,14 @@ fun VideoGridContent(padding: PaddingValues) {
             }
         }
         else -> {
-            VideoGridView(videoList = videoList, padding = padding)
+            VideoGridView(videoList = videoList, padding = padding, navController = navController)
         }
     }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun VideoGridView(videoList: List<VideoItem>, padding: PaddingValues) {
+fun VideoGridView(videoList: List<VideoItem>, padding: PaddingValues, navController: NavController) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = padding,
@@ -158,26 +163,37 @@ fun VideoGridView(videoList: List<VideoItem>, padding: PaddingValues) {
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(videoList) { video ->
-            VideoCard(video = video)
+            VideoCard(video = video, navController = navController)
         }
     }
 }
 
 @Composable
-fun VideoCard(video: VideoItem) {
+fun VideoCard(video: VideoItem, navController: NavController) {
     val TAG = "VideoCard"
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier
             .aspectRatio(1f)
             .clickable {
                 Log.d(TAG, "Video clicked: ${video.name}")
+                try {
+                    val encodedUri = java.net.URLEncoder.encode(
+                        video.uri.toString(),
+                        java.nio.charset.StandardCharsets.UTF_8.toString()
+                    )
+                    Log.d(TAG, "Navigating to videoPlayer/$encodedUri")
+                    navController.navigate("videoPlayer/$encodedUri")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Navigation error: ${e.message}", e)
+                }
             }
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
             if (video.thumbnail != null) {
                 AsyncImage(
-                    model = ImageRequest.Builder(LocalContext.current)
+                    model = ImageRequest.Builder(context)
                         .data(video.thumbnail)
                         .build(),
                     contentDescription = video.name,

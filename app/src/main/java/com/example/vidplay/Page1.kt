@@ -9,9 +9,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.navigation.NavController
 
 @Composable
-fun Page1Screen() {
+fun Page1Screen(navController: NavController) {
     val context = LocalContext.current
     val TAG = "Page1Screen"
 
@@ -43,5 +44,5 @@ fun Page1Screen() {
         }
     }
 
-    VideoGrid()
+    VideoGrid(navController = navController)
 }
