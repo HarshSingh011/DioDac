@@ -1,12 +1,11 @@
 @file:OptIn(androidx.media3.common.util.UnstableApi::class)
 
-package com.example.vidplay.ui
+package com.example.vidplay.ui.VideoSection
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.BrightnessHigh
 import androidx.compose.material.icons.rounded.Forward10

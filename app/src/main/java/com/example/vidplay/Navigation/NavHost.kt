@@ -6,9 +6,9 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.vidplay.MainScreen
-import com.example.vidplay.Page1Screen
-import com.example.vidplay.ui.VideoPlayerScreen
+import com.example.vidplay.ui.MainScreen
+import com.example.vidplay.ui.VideoSection.Page1Screen
+import com.example.vidplay.ui.VideoSection.VideoPlayerScreen
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
 

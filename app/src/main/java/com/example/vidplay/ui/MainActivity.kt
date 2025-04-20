@@ -1,4 +1,4 @@
-package com.example.vidplay
+package com.example.vidplay.ui
 
 import android.os.Bundle
 import android.util.Log

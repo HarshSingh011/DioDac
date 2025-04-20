@@ -1,4 +1,4 @@
-package com.example.vidplay
+package com.example.vidplay.ui.VideoSection
 
 import android.Manifest
 import android.content.pm.PackageManager
