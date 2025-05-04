@@ -22,6 +22,7 @@
         tools:targetApi="31">
         <activity
             android:name=".ui.MainActivity"
+            android:supportsPictureInPicture="true"
             android:exported="true"
             android:label="@string/app_name"
             android:theme="@style/Theme.VidPlay">
@@ -31,6 +32,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <receiver
+            android:name=".pip.PipBroadcastReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.example.vidplay.ACTION_PLAY" />
+                <action android:name="com.example.vidplay.ACTION_PAUSE" />
+                <action android:name="com.example.vidplay.ACTION_FORWARD" />
+                <action android:name="com.example.vidplay.ACTION_REWIND" />
+            </intent-filter>
+        </receiver>
     </application>
+
+
 
 </manifest>

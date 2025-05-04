@@ -44,6 +44,10 @@ class VideoPlayerViewModel(
     val hasSubtitles: MutableState<Boolean> = mutableStateOf(false)
     val currentSubtitle: MutableState<String> = mutableStateOf("")
 
+    val wasPlayingBeforePip: MutableState<Boolean> = mutableStateOf(false)
+
+    val isInPipMode: MutableState<Boolean> = mutableStateOf(false)
+
     init {
         setHardwareVolumeControlStream()
         initializePlayer()
@@ -79,11 +83,19 @@ class VideoPlayerViewModel(
 
                         this@VideoPlayerViewModel.duration.value = playerDuration
                         this@VideoPlayerViewModel.isPlaying.value = playerIsPlaying
+                    } else if (playbackState == Player.STATE_ENDED) {
+                        this@VideoPlayerViewModel.isPlaying.value = false
+                        wasPlayingBeforePip.value = false
+                        android.util.Log.d("VideoPlayerViewModel", "Video playback ended")
                     }
                 }
 
                 override fun onIsPlayingChanged(playing: Boolean) {
                     this@VideoPlayerViewModel.isPlaying.value = playing
+
+                    if (playing) {
+                        wasPlayingBeforePip.value = true
+                    }
                 }
 
                 override fun onCues(cueList: List<androidx.media3.common.text.Cue>) {
@@ -135,26 +147,127 @@ class VideoPlayerViewModel(
         }
     }
 
+    fun getExoPlayer(): ExoPlayer? {
+        return player
+    }
+
+    fun getPipPlayerView(context: Context): PlayerView {
+        return PlayerView(context).apply {
+            player = this@VideoPlayerViewModel.player
+            useController = false
+            setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+
+            setOnTouchListener { _, _ -> true }
+
+            setUseController(false)
+            controllerAutoShow = false
+            controllerHideOnTouch = false
+
+            isFocusable = false
+            isClickable = false
+        }
+    }
+
+    fun setInPipMode(inPipMode: Boolean) {
+        val previousPipMode = isInPipMode.value
+        isInPipMode.value = inPipMode
+
+        if (inPipMode && !previousPipMode) {
+            wasPlayingBeforePip.value = isPlaying.value
+
+            playVideo()
+            android.util.Log.d("VideoPlayerViewModel", "Entered PiP mode, auto-playing video")
+        } else if (!inPipMode && previousPipMode) {
+            if (!wasPlayingBeforePip.value && isPlaying.value) {
+                pauseVideo()
+                android.util.Log.d("VideoPlayerViewModel", "Exited PiP mode, restoring previous pause state")
+            }
+        }
+
+        android.util.Log.d("VideoPlayerViewModel", "Set PiP mode: $inPipMode")
+    }
+
     fun getPlayerView(context: Context): PlayerView {
         return PlayerView(context).apply {
             player = this@VideoPlayerViewModel.player
             useController = false
             setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+
+            if (isInPipMode.value) {
+                visibility = View.GONE
+                setOnTouchListener { _, _ -> true }
+            } else {
+                visibility = View.VISIBLE
+                setOnTouchListener(null)
+            }
+        }
+    }
+
+    fun replayVideo() {
+        player?.let { exoPlayer ->
+            exoPlayer.seekTo(0)
+            exoPlayer.play()
+            isPlaying.value = true
+            wasPlayingBeforePip.value = false
+            android.util.Log.d("VideoPlayerViewModel", "Video replaying from beginning")
         }
     }
 
     fun togglePlayPause() {
+        if (isInPipMode.value) {
+            android.util.Log.d("VideoPlayerViewModel", "Ignoring play/pause toggle in PiP mode")
+            return
+        }
+
         player?.let { exoPlayer ->
+            if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                replayVideo()
+                return
+            }
+
             if (exoPlayer.isPlaying) {
                 exoPlayer.pause()
+                wasPlayingBeforePip.value = false
             } else {
                 exoPlayer.play()
+                wasPlayingBeforePip.value = true
             }
             isPlaying.value = exoPlayer.isPlaying
         }
     }
 
+    fun playVideo() {
+        player?.let { exoPlayer ->
+            if (!exoPlayer.isPlaying) {
+                if (exoPlayer.playbackState == Player.STATE_ENDED) {
+                    exoPlayer.seekTo(0)
+                    android.util.Log.d("VideoPlayerViewModel", "Video ended, restarting from beginning")
+                }
+
+                exoPlayer.play()
+                isPlaying.value = true
+                wasPlayingBeforePip.value = true
+                android.util.Log.d("VideoPlayerViewModel", "Video playing")
+            }
+        }
+    }
+
+    fun pauseVideo() {
+        player?.let { exoPlayer ->
+            if (exoPlayer.isPlaying) {
+                exoPlayer.pause()
+                isPlaying.value = false
+                android.util.Log.d("VideoPlayerViewModel", "Video paused")
+            }
+        }
+    }
+
     fun seekTo(position: Long) {
+        if (isInPipMode.value) {
+            android.util.Log.d("VideoPlayerViewModel", "Ignoring seek in PiP mode")
+            return
+        }
+
         player?.seekTo(position)
     }
 
@@ -173,6 +286,11 @@ class VideoPlayerViewModel(
     }
 
     fun setBrightness(brightnessValue: Float) {
+        if (isInPipMode.value) {
+            android.util.Log.d("VideoPlayerViewModel", "Ignoring brightness change in PiP mode")
+            return
+        }
+
         brightness.value = brightnessValue
         (context as? Activity)?.window?.let { window ->
             val layoutParams = window.attributes
@@ -197,6 +315,11 @@ class VideoPlayerViewModel(
     }
 
     fun toggleFullscreen() {
+        if (isInPipMode.value) {
+            android.util.Log.d("VideoPlayerViewModel", "Ignoring fullscreen toggle in PiP mode")
+            return
+        }
+
         val newFullscreenState = !isFullscreen.value
         isFullscreen.value = newFullscreenState
 
