@@ -1,411 +1,305 @@
-@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+package com.example.vidplay.pip
 
-package com.example.vidplay.ui.VideoSection
+import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.PendingIntent
+import android.app.PictureInPictureParams
+import android.app.RemoteAction
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.graphics.drawable.Icon
+import android.os.Build
+import android.util.Log
+import android.util.Rational
+import androidx.annotation.DrawableRes
+import androidx.annotation.RequiresApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavController
-import com.example.vidplay.pip.PipHandler
-import com.example.vidplay.viewmodels.VideoPlayerViewModel
-import com.example.vidplay.viewmodels.VideoPlayerViewModelFactory
-import kotlinx.coroutines.launch
-import java.util.concurrent.TimeUnit
-import androidx.media3.ui.PlayerView
-import kotlinx.coroutines.CoroutineScope
-import android.view.View
+@SuppressLint("UnspecifiedRegisterReceiverFlag")
+class PipHandler(private val activity: Activity) {
+    private val TAG = "PipHandler"
 
-@Composable
-fun VideoPlayerScreen(
-    navController: NavController,
-    videoUri: String,
-    pipHandler: PipHandler,
-    onPlayingStateChanged: (Boolean) -> Unit = {},
-    onVideoPlayerViewModelCreated: (VideoPlayerViewModel) -> Unit = {}
-) {
-    val context = LocalContext.current
+    private val _isInPipMode = MutableStateFlow(false)
+    val isInPipMode: StateFlow<Boolean> = _isInPipMode.asStateFlow()
 
-    val viewModel: VideoPlayerViewModel = viewModel(
-        factory = VideoPlayerViewModelFactory(LocalContext.current, videoUri)
-    )
+    private val _isVideoPlaying = MutableStateFlow(false)
+    val isVideoPlaying: StateFlow<Boolean> = _isVideoPlaying.asStateFlow()
 
-    LaunchedEffect(viewModel) {
-        onVideoPlayerViewModelCreated(viewModel)
-        android.util.Log.d("VideoPlayerScreen", "Notified about ViewModel creation")
+    private val _isVideoCompleted = MutableStateFlow(false)
+    val isVideoCompleted: StateFlow<Boolean> = _isVideoCompleted.asStateFlow()
+
+    var onPlayVideo: () -> Unit = {}
+    var onPauseVideo: () -> Unit = {}
+    var onForward: () -> Unit = {}
+    var onRewind: () -> Unit = {}
+    var onReplayVideo: () -> Unit = {}
+
+    var onPipModeChanged: (Boolean) -> Unit = {}
+
+    companion object {
+        private const val ACTION_TYPE_PLAY = 1
+        private const val ACTION_TYPE_PAUSE = 2
+        private const val ACTION_TYPE_FORWARD = 3
+        private const val ACTION_TYPE_REWIND = 4
+        private const val ACTION_TYPE_REPLAY = 5
+
+        private const val EXTRA_PIP_ACTION = "pip_action_type"
+        private const val ACTION_PIP_CONTROL = "com.example.vidplay.ACTION_PIP_CONTROL"
+
+        private const val REQUEST_PLAY = 100
+        private const val REQUEST_PAUSE = 101
+        private const val REQUEST_FORWARD = 102
+        private const val REQUEST_REWIND = 103
+        private const val REQUEST_REPLAY = 104
     }
 
-    android.util.Log.d("VideoPlayerScreen", "Received video URI: $videoUri")
-
-    val isInPipMode = pipHandler.isInPipMode.collectAsState().value
-
-    LaunchedEffect(Unit) {
-        pipHandler.onPlayVideo = {
-            viewModel.playVideo()
-        }
-
-        pipHandler.onPauseVideo = {
-            viewModel.pauseVideo()
-        }
-
-        pipHandler.onForward = {
-            viewModel.forward10Seconds()
-        }
-
-        pipHandler.onRewind = {
-            viewModel.rewind10Seconds()
-        }
-
-        pipHandler.onReplayVideo = {
-            viewModel.replayVideo()
-        }
-    }
-
-    LaunchedEffect(viewModel.isPlaying.value) {
-        onPlayingStateChanged(viewModel.isPlaying.value)
-    }
-
-    LaunchedEffect(viewModel.getExoPlayer()?.playbackState) {
-        viewModel.getExoPlayer()?.let { player ->
-            val isCompleted = player.playbackState == androidx.media3.common.Player.STATE_ENDED
-            pipHandler.updateVideoCompletedState(isCompleted)
-            android.util.Log.d("VideoPlayerScreen", "Video completion state: $isCompleted")
-        }
-    }
-
-    if (isInPipMode) {
-        PipModeVideoPlayer(viewModel)
-    } else {
-        NormalModeVideoPlayer(
-            navController = navController,
-            viewModel = viewModel,
-            pipHandler = pipHandler
-        )
-    }
-}
-
-@Composable
-private fun PipModeVideoPlayer(viewModel: VideoPlayerViewModel) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        AndroidView(
-            factory = { ctx ->
-                val pipPlayerView = PlayerView(ctx).apply {
-                    player = viewModel.getExoPlayer()
-                    useController = false
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-                    hideController()
-
-                    setOnTouchListener { _, _ -> true }
-
-                    controllerAutoShow = false
-                    controllerHideOnTouch = false
-                    controllerShowTimeoutMs = 0
-
-                    resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-
-                    findViewById<View>(androidx.media3.ui.R.id.exo_controller)?.visibility = View.GONE
-                    findViewById<View>(androidx.media3.ui.R.id.exo_overlay)?.visibility = View.GONE
-
-                    overlayFrameLayout?.removeAllViews()
-                    overlayFrameLayout?.isClickable = false
-                    overlayFrameLayout?.isFocusable = false
-
-                    android.util.Log.d("VideoPlayerScreen", "Created specialized PiP player view with no UI")
-                }
-
-                pipPlayerView.alpha = 0f
-
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    pipPlayerView.alpha = 1f
-                }, 100)
-
-                pipPlayerView
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-    }
-}
-
-@Composable
-private fun NormalModeVideoPlayer(
-    navController: NavController,
-    viewModel: VideoPlayerViewModel,
-    pipHandler: PipHandler
-) {
-    val showControls = remember { mutableStateOf(true) }
-    val showBrightnessControl = remember { mutableStateOf(false) }
-    val showVolumeControl = remember { mutableStateOf(false) }
-    val coroutineScope = rememberCoroutineScope()
-
-    LaunchedEffect(key1 = Unit) {
-        kotlinx.coroutines.delay(3000)
-        if (showControls.value) {
-            showControls.value = false
-        }
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-    ) {
-        AndroidView(
-            factory = { ctx ->
-                viewModel.getPlayerView(ctx).apply {
-                    useController = false
-                }
-            },
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onTap = {
-                            showControls.value = !showControls.value
-                            if (showControls.value) {
-                                coroutineScope.launch {
-                                    kotlinx.coroutines.delay(3000)
-                                    showControls.value = false
-                                }
-                            }
-                        }
-                    )
-                }
-        )
-
-        if (viewModel.hasSubtitles.value && viewModel.currentSubtitle.value.isNotEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 100.dp)
-            ) {
-                Text(
-                    text = viewModel.currentSubtitle.value,
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyLarge,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .padding(8.dp)
-                        .fillMaxWidth()
-                )
+    private val pipActionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == ACTION_PIP_CONTROL) {
+                handlePipAction(intent)
             }
         }
+    }
 
-        if (showControls.value) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.5f))
-                    .padding(16.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { navController.popBackStack() }) {
-                        Icon(
-                            imageVector = Icons.Rounded.ArrowBack,
-                            contentDescription = "Back",
-                            tint = Color.White
-                        )
-                    }
+    init {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            activity.registerReceiver(
+                pipActionReceiver,
+                IntentFilter(ACTION_PIP_CONTROL),
+                Context.RECEIVER_NOT_EXPORTED
+            )
+        } else {
+            activity.registerReceiver(
+                pipActionReceiver,
+                IntentFilter(ACTION_PIP_CONTROL)
+            )
+        }
+    }
 
-                    Text(
-                        text = viewModel.videoTitle.value,
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium,
-                        maxLines = 1
-                    )
+    fun cleanup() {
+        try {
+            activity.unregisterReceiver(pipActionReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unregistering receiver: ${e.message}")
+        }
+    }
 
-                    Spacer(modifier = Modifier.width(48.dp))
+    fun updatePlayingState(isPlaying: Boolean) {
+        _isVideoPlaying.value = isPlaying
+        if (_isInPipMode.value && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            updatePipActions()
+        }
+    }
+
+    fun updateVideoCompletedState(isCompleted: Boolean) {
+        _isVideoCompleted.value = isCompleted
+        if (_isInPipMode.value && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            updatePipActions()
+        }
+    }
+
+    fun setPipMode(isInPipMode: Boolean) {
+        val wasInPipMode = _isInPipMode.value
+        _isInPipMode.value = isInPipMode
+
+        if (isInPipMode != wasInPipMode) {
+            onPipModeChanged(isInPipMode)
+
+            if (isInPipMode && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                updatePipActions()
+            }
+        }
+    }
+
+    fun enterPictureInPictureMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (activity.packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                try {
+                    val params = buildPipParams()
+                    activity.enterPictureInPictureMode(params)
+                    Log.d(TAG, "Entered PiP mode")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error entering PiP mode: ${e.message}", e)
                 }
+            } else {
+                Log.d(TAG, "PiP not supported on this device")
+            }
+        } else {
+            Log.d(TAG, "PiP requires Android O or higher")
+        }
+    }
 
-                Spacer(modifier = Modifier.weight(1f))
+    @RequiresApi(Build.VERSION_CODES.O)
+    fun updatePipActions() {
+        if (_isInPipMode.value) {
+            try {
+                val params = buildPipParams()
+                activity.setPictureInPictureParams(params)
+                Log.d(TAG, "PiP actions updated: playing=${_isVideoPlaying.value}, completed=${_isVideoCompleted.value}")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error updating PiP actions: ${e.message}", e)
+            }
+        }
+    }
 
-                if (showBrightnessControl.value) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.BrightnessHigh,
-                            contentDescription = "Brightness",
-                            tint = Color.White
-                        )
-                        Slider(
-                            value = viewModel.brightness.value,
-                            onValueChange = { viewModel.setBrightness(it) },
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun buildPipParams(): PictureInPictureParams {
+        val aspectRatio = Rational(16, 9)
+        val paramsBuilder = PictureInPictureParams.Builder()
+            .setAspectRatio(aspectRatio)
+
+        val actions = createPipActions()
+        paramsBuilder.setActions(actions)
+
+        return paramsBuilder.build()
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun createPipActions(): List<RemoteAction> {
+        val actions = mutableListOf<RemoteAction>()
+
+        actions.add(createRemoteAction(
+            android.R.drawable.ic_media_rew,
+            "Rewind",
+            "Rewind 10 seconds",
+            ACTION_TYPE_REWIND,
+            REQUEST_REWIND
+        ))
+
+        if (_isVideoCompleted.value) {
+            actions.add(createRemoteAction(
+                android.R.drawable.ic_popup_sync,
+                "Replay",
+                "Replay video",
+                ACTION_TYPE_REPLAY,
+                REQUEST_REPLAY
+            ))
+        } else if (_isVideoPlaying.value) {
+            actions.add(createRemoteAction(
+                android.R.drawable.ic_media_pause,
+                "Pause",
+                "Pause video",
+                ACTION_TYPE_PAUSE,
+                REQUEST_PAUSE
+            ))
+        } else {
+            actions.add(createRemoteAction(
+                android.R.drawable.ic_media_play,
+                "Play",
+                "Play video",
+                ACTION_TYPE_PLAY,
+                REQUEST_PLAY
+            ))
+        }
+
+        actions.add(createRemoteAction(
+            android.R.drawable.ic_media_ff,
+            "Forward",
+            "Forward 10 seconds",
+            ACTION_TYPE_FORWARD,
+            REQUEST_FORWARD
+        ))
+
+        return actions
+    }
+
+    @RequiresApi(Build.VERSION_CODES.O)
+    private fun createRemoteAction(
+        @DrawableRes iconResId: Int,
+        title: String,
+        contentDescription: String,
+        actionType: Int,
+        requestCode: Int
+    ): RemoteAction {
+        // Create a broadcast intent instead of an activity intent
+        val intent = Intent(ACTION_PIP_CONTROL).apply {
+            putExtra(EXTRA_PIP_ACTION, actionType)
+        }
+
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
+
+        // Use getBroadcast instead of getActivity
+        val pendingIntent = PendingIntent.getBroadcast(
+            activity,
+            requestCode,
+            intent,
+            flags
+        )
+
+        val icon = Icon.createWithResource(activity, iconResId)
+
+        return RemoteAction(
+            icon,
+            title,
+            contentDescription,
+            pendingIntent
+        )
+    }
+
+    private fun handlePipAction(intent: Intent) {
+        val actionType = intent.getIntExtra(EXTRA_PIP_ACTION, -1)
+        if (actionType != -1) {
+            Log.d(TAG, "Received PiP action: $actionType")
+
+            when (actionType) {
+                ACTION_TYPE_PLAY -> {
+                    Log.d(TAG, "PiP Action received: Play")
+                    _isVideoPlaying.value = true
+                    _isVideoCompleted.value = false
+                    onPlayVideo()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        updatePipActions()
                     }
                 }
-
-                if (showVolumeControl.value) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.VolumeUp,
-                            contentDescription = "Volume",
-                            tint = Color.White
-                        )
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            horizontalArrangement = Arrangement.SpaceEvenly,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(onClick = { viewModel.decreaseVolume() }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.VolumeDown,
-                                    contentDescription = "Decrease Volume",
-                                    tint = Color.White
-                                )
-                            }
-
-                            Text(
-                                text = "${(viewModel.volume.value * 100).toInt()}%",
-                                color = Color.White
-                            )
-
-                            IconButton(onClick = { viewModel.increaseVolume() }) {
-                                Icon(
-                                    imageVector = Icons.Rounded.VolumeUp,
-                                    contentDescription = "Increase Volume",
-                                    tint = Color.White
-                                )
-                            }
-                        }
+                ACTION_TYPE_PAUSE -> {
+                    Log.d(TAG, "PiP Action received: Pause")
+                    _isVideoPlaying.value = false
+                    onPauseVideo()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        updatePipActions()
                     }
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { viewModel.rewind10Seconds() }) {
-                        Icon(
-                            imageVector = Icons.Rounded.Replay10,
-                            contentDescription = "Rewind 10 seconds",
-                            tint = Color.White
-                        )
-                    }
-
-                    IconButton(
-                        onClick = {
-                            viewModel.togglePlayPause()
-                        },
-                        modifier = Modifier.size(64.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (viewModel.isPlaying.value) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                            contentDescription = if (viewModel.isPlaying.value) "Pause" else "Play",
-                            tint = Color.White,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-
-                    IconButton(onClick = { viewModel.forward10Seconds() }) {
-                        Icon(
-                            imageVector = Icons.Rounded.Forward10,
-                            contentDescription = "Forward 10 seconds",
-                            tint = Color.White
-                        )
-                    }
+                ACTION_TYPE_FORWARD -> {
+                    Log.d(TAG, "PiP Action received: Forward")
+                    onForward()
                 }
-
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = formatDuration(viewModel.currentPosition.value),
-                        color = Color.White
-                    )
-
-                    Slider(
-                        value = viewModel.currentPosition.value.toFloat(),
-                        onValueChange = { viewModel.seekTo(it.toLong()) },
-                        valueRange = 0f..viewModel.duration.value.toFloat(),
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                    )
-
-                    Text(
-                        text = formatDuration(viewModel.duration.value),
-                        color = Color.White
-                    )
+                ACTION_TYPE_REWIND -> {
+                    Log.d(TAG, "PiP Action received: Rewind")
+                    onRewind()
                 }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceEvenly
-                ) {
-                    IconButton(onClick = { showBrightnessControl.value = !showBrightnessControl.value }) {
-                        Icon(
-                            imageVector = Icons.Rounded.BrightnessHigh,
-                            contentDescription = "Brightness",
-                            tint = Color.White
-                        )
-                    }
-
-                    IconButton(onClick = { showVolumeControl.value = !showVolumeControl.value }) {
-                        Icon(
-                            imageVector = Icons.Rounded.VolumeUp,
-                            contentDescription = "Volume",
-                            tint = Color.White
-                        )
-                    }
-
-                    IconButton(onClick = { viewModel.toggleFullscreen() }) {
-                        Icon(
-                            imageVector = if (viewModel.isFullscreen.value) Icons.Rounded.FullscreenExit else Icons.Rounded.Fullscreen,
-                            contentDescription = "Fullscreen",
-                            tint = Color.White
-                        )
+                ACTION_TYPE_REPLAY -> {
+                    Log.d(TAG, "PiP Action received: Replay")
+                    _isVideoPlaying.value = true
+                    _isVideoCompleted.value = false
+                    onReplayVideo()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        updatePipActions()
                     }
                 }
             }
         }
     }
-}
 
-private fun formatDuration(durationMs: Long): String {
-    val hours = TimeUnit.MILLISECONDS.toHours(durationMs)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(durationMs) % 60
-    val seconds = TimeUnit.MILLISECONDS.toSeconds(durationMs) % 60
-
-    return if (hours > 0) {
-        String.format("%d:%02d:%02d", hours, minutes, seconds)
-    } else {
-        String.format("%02d:%02d", minutes, seconds)
+    fun handleIntent(intent: Intent?) {
+        intent?.let {
+            val actionType = it.getIntExtra(EXTRA_PIP_ACTION, -1)
+            if (actionType != -1) {
+                // Create a copy of the intent with our action
+                val pipIntent = Intent(ACTION_PIP_CONTROL).apply {
+                    putExtra(EXTRA_PIP_ACTION, actionType)
+                }
+                // Forward to our broadcast handler
+                handlePipAction(pipIntent)
+            }
+        }
     }
 }

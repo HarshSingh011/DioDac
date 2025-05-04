@@ -1,3 +1,5 @@
+@file:OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package com.example.vidplay.Navigation
 
 import androidx.compose.runtime.Composable
@@ -8,6 +10,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import androidx.media3.common.util.UnstableApi
 import com.example.vidplay.pip.PipHandler
 import com.example.vidplay.ui.MainActivity
 import com.example.vidplay.ui.MainScreen
@@ -16,6 +19,7 @@ import com.example.vidplay.ui.VideoSection.VideoPlayerScreen
 import com.example.vidplay.viewmodels.VideoPlayerViewModel
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
+
 
 @Composable
 fun MyAppNavHost(
