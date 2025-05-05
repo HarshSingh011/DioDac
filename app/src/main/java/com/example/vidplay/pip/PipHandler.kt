@@ -12,6 +12,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.util.Rational
 import androidx.annotation.DrawableRes
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 @SuppressLint("UnspecifiedRegisterReceiverFlag")
 class PipHandler(private val activity: Activity) {
     private val TAG = "PipHandler"
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val _isInPipMode = MutableStateFlow(false)
     val isInPipMode: StateFlow<Boolean> = _isInPipMode.asStateFlow()
@@ -60,8 +63,11 @@ class PipHandler(private val activity: Activity) {
 
     private val pipActionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
+            Log.d(TAG, "Broadcast received: ${intent?.action}, extras: ${intent?.extras}")
             if (intent?.action == ACTION_PIP_CONTROL) {
-                handlePipAction(intent)
+                mainHandler.post {
+                    handlePipAction(intent)
+                }
             }
         }
     }
@@ -79,11 +85,13 @@ class PipHandler(private val activity: Activity) {
                 IntentFilter(ACTION_PIP_CONTROL)
             )
         }
+        Log.d(TAG, "PipHandler initialized and receiver registered")
     }
 
     fun cleanup() {
         try {
             activity.unregisterReceiver(pipActionReceiver)
+            Log.d(TAG, "PipHandler cleaned up")
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver: ${e.message}")
         }
@@ -123,6 +131,7 @@ class PipHandler(private val activity: Activity) {
                     val params = buildPipParams()
                     activity.enterPictureInPictureMode(params)
                     Log.d(TAG, "Entered PiP mode")
+                    setPipMode(true)
                 } catch (e: Exception) {
                     Log.e(TAG, "Error entering PiP mode: ${e.message}", e)
                 }
@@ -216,9 +225,9 @@ class PipHandler(private val activity: Activity) {
         actionType: Int,
         requestCode: Int
     ): RemoteAction {
-        // Create a broadcast intent instead of an activity intent
         val intent = Intent(ACTION_PIP_CONTROL).apply {
             putExtra(EXTRA_PIP_ACTION, actionType)
+            setPackage(activity.packageName)
         }
 
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -227,9 +236,8 @@ class PipHandler(private val activity: Activity) {
             PendingIntent.FLAG_UPDATE_CURRENT
         }
 
-        // Use getBroadcast instead of getActivity
         val pendingIntent = PendingIntent.getBroadcast(
-            activity,
+            activity.applicationContext,
             requestCode,
             intent,
             flags
@@ -250,39 +258,41 @@ class PipHandler(private val activity: Activity) {
         if (actionType != -1) {
             Log.d(TAG, "Received PiP action: $actionType")
 
-            when (actionType) {
-                ACTION_TYPE_PLAY -> {
-                    Log.d(TAG, "PiP Action received: Play")
-                    _isVideoPlaying.value = true
-                    _isVideoCompleted.value = false
-                    onPlayVideo()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        updatePipActions()
+            mainHandler.post {
+                when (actionType) {
+                    ACTION_TYPE_PLAY -> {
+                        Log.d(TAG, "PiP Action received: Play")
+                        _isVideoPlaying.value = true
+                        _isVideoCompleted.value = false
+                        onPlayVideo()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            updatePipActions()
+                        }
                     }
-                }
-                ACTION_TYPE_PAUSE -> {
-                    Log.d(TAG, "PiP Action received: Pause")
-                    _isVideoPlaying.value = false
-                    onPauseVideo()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        updatePipActions()
+                    ACTION_TYPE_PAUSE -> {
+                        Log.d(TAG, "PiP Action received: Pause")
+                        _isVideoPlaying.value = false
+                        onPauseVideo()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            updatePipActions()
+                        }
                     }
-                }
-                ACTION_TYPE_FORWARD -> {
-                    Log.d(TAG, "PiP Action received: Forward")
-                    onForward()
-                }
-                ACTION_TYPE_REWIND -> {
-                    Log.d(TAG, "PiP Action received: Rewind")
-                    onRewind()
-                }
-                ACTION_TYPE_REPLAY -> {
-                    Log.d(TAG, "PiP Action received: Replay")
-                    _isVideoPlaying.value = true
-                    _isVideoCompleted.value = false
-                    onReplayVideo()
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        updatePipActions()
+                    ACTION_TYPE_FORWARD -> {
+                        Log.d(TAG, "PiP Action received: Forward")
+                        onForward()
+                    }
+                    ACTION_TYPE_REWIND -> {
+                        Log.d(TAG, "PiP Action received: Rewind")
+                        onRewind()
+                    }
+                    ACTION_TYPE_REPLAY -> {
+                        Log.d(TAG, "PiP Action received: Replay")
+                        _isVideoPlaying.value = true
+                        _isVideoCompleted.value = false
+                        onReplayVideo()
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            updatePipActions()
+                        }
                     }
                 }
             }
@@ -293,12 +303,13 @@ class PipHandler(private val activity: Activity) {
         intent?.let {
             val actionType = it.getIntExtra(EXTRA_PIP_ACTION, -1)
             if (actionType != -1) {
-                // Create a copy of the intent with our action
                 val pipIntent = Intent(ACTION_PIP_CONTROL).apply {
                     putExtra(EXTRA_PIP_ACTION, actionType)
+                    setPackage(activity.packageName)
                 }
-                // Forward to our broadcast handler
-                handlePipAction(pipIntent)
+                mainHandler.post {
+                    handlePipAction(pipIntent)
+                }
             }
         }
     }
